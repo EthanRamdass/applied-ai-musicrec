@@ -135,11 +135,63 @@ Because: energy similarity (+0.97); non-acoustic preference (+0.5)
 
 ## Experiments You Tried
 
-Use this section to document the experiments you ran. For example:
+I tested the recommender with several user profiles to see whether the scoring logic behaved sensibly across different tastes.
 
-- What happened when you changed the weight on genre from 2.0 to 0.5
-- What happened when you added tempo or valence to the score
-- How did your system behave for different types of users
+### Stress test with diverse profiles
+
+```text
+=== High-Energy Pop ===
+Sunrise City - Score: 4.48
+Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.98); non-acoustic preference (+0.5)
+
+Gym Hero - Score: 3.37
+Because: genre match (+2.0); energy similarity (+0.87); non-acoustic preference (+0.5)
+
+Rooftop Lights - Score: 2.46
+Because: mood match (+1.0); energy similarity (+0.96); non-acoustic preference (+0.5)
+
+Neon Harbor - Score: 1.49
+Because: energy similarity (+0.99); non-acoustic preference (+0.5)
+
+Circuit Bloom - Score: 1.47
+Because: energy similarity (+0.97); non-acoustic preference (+0.5)
+
+=== Chill Lofi ===
+Midnight Coding - Score: 4.31
+Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.58); acoustic preference (+0.5)
+
+Library Rain - Score: 3.81
+Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.65); acoustic preference (+0.5)
+
+Focus Flow - Score: 2.80
+Because: mood match (+1.0); energy similarity (+0.60); acoustic preference (+0.5)
+
+Coffee Shop Stories - Score: 2.58
+Because: energy similarity (+0.63); acoustic preference (+0.5)
+
+Spacewalk Thoughts - Score: 2.28
+Because: mood match (+1.0); energy similarity (+0.72); acoustic preference (+0.5)
+
+=== Deep Intense Rock ===
+Storm Runner - Score: 4.38
+Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.09); non-acoustic preference (+0.5)
+
+Gym Hero - Score: 3.37
+Because: genre match (+2.0); energy similarity (+0.87); non-acoustic preference (+0.5)
+
+Fire in the Skyline - Score: 3.32
+Because: mood match (+1.0); energy similarity (+0.05); non-acoustic preference (+0.5)
+
+Neon Harbor - Score: 1.49
+Because: energy similarity (+0.99); non-acoustic preference (+0.5)
+
+Circuit Bloom - Score: 1.47
+Because: energy similarity (+0.97); non-acoustic preference (+0.5)
+```
+
+### Small experiment: changing the weights
+
+I also tried a small sensitivity test by giving energy a stronger role in the scoring rule. The results changed noticeably in the ranking order, especially for profiles that were built around a specific target energy level. This made the recommendations feel more tuned to the user's target vibe, but it also made the output more dependent on a single numeric feature.
 
 ---
 
