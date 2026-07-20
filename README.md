@@ -215,10 +215,9 @@ Read and complete `model_card.md`:
 
 [**Model Card**](model_card.md)
 
-Write 1 to 2 paragraphs here about what you learned:
+I learned that a recommender turns raw song features into predictions by converting a user’s preferences into a simple scoring rule and then ranking songs by how well each one matches. In this project, features like genre, mood, energy, and acousticness are treated as signals that can be weighted differently, which makes the system feel transparent but also very dependent on the design of the scoring function. The model is not “understanding” music in a human way; it is making a structured estimate based on the attributes provided in the data.
 
-- about how recommenders turn data into predictions
-- about where bias or unfairness could show up in systems like this
+I also learned that bias can show up in recommenders even when the logic looks simple. If the system overemphasizes genre or mood, it may repeatedly suggest songs from the same style and miss artists or songs from underrepresented groups, especially when the dataset is small or uneven. In real-world systems, this can create unfair or narrow recommendations, so careful dataset design, diversity checks, and human review are important.
 
 
 
