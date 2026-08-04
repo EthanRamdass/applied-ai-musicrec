@@ -24,8 +24,18 @@ Run:
 
 import json
 import logging
+import os
 import sys
 from typing import Dict, List, Optional, Tuple
+
+# Load ANTHROPIC_API_KEY from a local .env file if python-dotenv is installed.
+# The .env file is git-ignored — never commit real keys to source.
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv()
+except ImportError:  # pragma: no cover - dotenv is optional
+    pass
 
 # `anthropic` is imported lazily inside the functions that build a live client,
 # so the retrieval and grounding-guardrail logic can be imported and unit-tested
@@ -185,12 +195,22 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     request = " ".join(sys.argv[1:]) or "upbeat pop for a happy morning, nothing acoustic"
     print(f"Request: {request}\n")
+
+    # Fail fast with a clear message if no credentials are configured, instead
+    # of letting the SDK raise a bare TypeError deep in the call stack.
+    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+        sys.exit(
+            "Error: no Anthropic credentials found. Set ANTHROPIC_API_KEY and retry, e.g.\n"
+            '  Windows PowerShell:  $env:ANTHROPIC_API_KEY="your-key"\n'
+            '  macOS / Linux:       export ANTHROPIC_API_KEY="your-key"'
+        )
+
     import anthropic  # lazy import: only needed for the live API path
 
     try:
         print(recommend(request))
     except anthropic.AuthenticationError:
-        sys.exit("Error: invalid or missing ANTHROPIC_API_KEY. Set it and retry.")
+        sys.exit("Error: invalid ANTHROPIC_API_KEY. Check the key and retry.")
     except anthropic.APIConnectionError:
         sys.exit("Error: could not reach the Anthropic API. Check your connection.")
 

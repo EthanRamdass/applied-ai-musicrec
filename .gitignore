@@ -13,3 +13,8 @@ venv/
 
 # Pytest cache
 .pytest_cache/
+
+# Secrets / local config — NEVER commit API keys
+.env
+*.env
+
