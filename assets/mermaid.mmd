@@ -1,0 +1,75 @@
+%% Music Recommender — System Architecture
+%% How the project is organized: components, data flow (input -> process -> output),
+%% and where humans / testing check the AI results.
+%% Render at https://mermaid.live or: mmdc -i system_architecture.mmd -o system_architecture.svg
+flowchart TD
+
+    %% ---------------- INPUT ----------------
+    subgraph Input["INPUT"]
+        NLReq["👤 User request (natural language)<br/>'upbeat gym music, nothing acoustic'"]
+        Profile["Structured UserProfile<br/>genre / mood / energy / acoustic"]
+        CSV[("data/songs.csv<br/>song catalog")]
+    end
+
+    %% ---------------- PROCESS ----------------
+    subgraph Process["PROCESS"]
+        subgraph RAG["RAG layer — src/rag.py"]
+            Parse["Claude · parse request → UserProfile"]
+            Generate["Claude · generate grounded answer<br/>(uses only retrieved songs)"]
+        end
+        subgraph Rec["Retriever — src/recommender.py"]
+            Score["ScoringStrategy.score_song<br/>weighted content-based match"]
+            Rank["recommend_songs<br/>rank + diversity penalty → top-k"]
+            Score --> Rank
+        end
+        CLI["CLI runner — src/main.py<br/>batch profiles + strategies"]
+    end
+
+    %% ---------------- OUTPUT ----------------
+    subgraph Output["OUTPUT"]
+        Table["Ranked recommendation table<br/>title · score · reason"]
+        Answer["💬 Grounded conversational answer"]
+    end
+
+    %% ---------------- HUMAN / TESTING ----------------
+    subgraph Check["HUMAN & TESTING — checking AI results"]
+        Pytest["🧪 tests/test_recommender.py<br/>pytest: scoring & ranking correctness"]
+        Guard{{"🛡 Grounding guardrail<br/>reject songs not in retrieved set"}}
+        Human["👥 Human review<br/>experiments + bias check"]
+        Card["📄 model_card.md<br/>limitations & reflection"]
+    end
+
+    %% ---------------- DATA FLOW ----------------
+    NLReq --> Parse
+    Parse --> Profile
+    Profile --> Score
+    CSV --> Score
+    Rank -->|top-k songs| Generate
+    Rank --> Table
+    Generate --> Answer
+
+    Profile -.-> CLI
+    CLI --> Table
+    CSV --> CLI
+
+    %% ---------------- CHECK LINKS ----------------
+    Score -. verified by .-> Pytest
+    Rank -. verified by .-> Pytest
+    Generate -. constrained by .-> Guard
+    Guard -.-> Answer
+    Table -. reviewed by .-> Human
+    Answer -. reviewed by .-> Human
+    Human -. documents .-> Card
+
+    %% ---------------- STYLES ----------------
+    classDef io fill:#3ba36b,stroke:#1c5a38,color:#fff;
+    classDef data fill:#e8a33d,stroke:#8a5a12,color:#111;
+    classDef llm fill:#2d6cdf,stroke:#1b3f85,color:#fff;
+    classDef check fill:#8e44ad,stroke:#4a235a,color:#fff;
+    classDef guard fill:#c0392b,stroke:#7b241c,color:#fff;
+
+    class NLReq,Profile,Table,Answer io;
+    class CSV,Score,Rank,CLI data;
+    class Parse,Generate llm;
+    class Pytest,Human,Card check;
+    class Guard guard;

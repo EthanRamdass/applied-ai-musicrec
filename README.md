@@ -1,223 +1,156 @@
-# 🎵 Music Recommender Simulation
+# 🎵 Music Recommender — from Rule-Based Scoring to Retrieval-Augmented Generation
 
-## Project Summary
+## Original Project (Modules 1–3): *Music Recommender Simulation*
 
-In this project you will build and explain a small music recommender system.
-
-Your goal is to:
-
-- Represent songs and a user "taste profile" as data
-- Design a scoring rule that turns that data into recommendations
-- Evaluate what your system gets right and wrong
-- Reflect on how this mirrors real world AI recommenders
-
-Replace this paragraph with your own summary of what your version does.
+My original project was the **Music Recommender Simulation**. Its goal was to build a small, fully transparent **content-based recommender**: represent songs and a user's "taste profile" as data, design a scoring rule that turns that data into ranked recommendations, and evaluate what the system gets right and wrong. It could load a song catalog from CSV, score each song against a user profile using weighted attributes (genre, mood, energy, acousticness, and more), rank the results, and explain *why* each song was recommended — mirroring how real platforms like Spotify surface tracks, but with logic simple enough to read end-to-end.
 
 ---
 
-## How The System Works
+## Title and Summary
 
-My design is a simple content-based recommender. It uses song attributes to estimate whether a track fits a user's taste profile. In real-world systems, platforms such as Spotify or TikTok combine many signals, including listening history, skips, likes, and playlist behavior, but this simulation keeps the logic simple and transparent.
+**What it does:** This project extends the original rule-based recommender with a **Retrieval-Augmented Generation (RAG)** layer. A user can now type a request in plain English ("upbeat gym music, nothing acoustic"), and the system parses it into a structured profile, retrieves the best-matching songs from its catalog using the original scoring engine, and has a large language model (Claude) write a friendly, grounded recommendation — using **only** the songs it actually retrieved.
 
-In this version, each `Song` uses attributes like `genre`, `mood`, `energy`, `tempo_bpm`, `valence`, `danceability`, and `acousticness` to describe its style and feel. The `UserProfile` stores a small set of preferences, such as the user's favorite genre, favorite mood, target energy, and whether they prefer acoustic songs. The `Recommender` then compares every song to that profile and assigns it a score based on how well it matches.
-
-My algorithm recipe is:
-
-- `+2.0` points for a genre match
-- `+1.0` point for a mood match
-- `+1.0` point if the song's energy is close to the user's target energy
-- `+0.5` points if the song matches the user's acoustic preference
-- `+0.25` points for additional similarity in `valence` or `danceability` when relevant
-
-The scoring rule evaluates one song at a time, while the ranking rule sorts the full list of songs from highest score to lowest score and returns the top $k$ recommendations. This separation matters because the scoring rule answers "How well does this one song match?" while the ranking rule answers "Which songs should appear first in the final list?"
-
-A simple flow for the design is:
-
-Input (User Prefs) → Process (Score each song in the CSV) → Output (Rank and return the top $k$ songs)
-
-I expect this system to have some bias. Because it strongly favors genre and mood, it could over-recommend songs that are similar in style while missing enjoyable songs that fit the user's mood in a less obvious way. That is a common limitation of simple content-based recommender systems.
-
+**Why it matters:** It shows how a deterministic, explainable retrieval system and a generative model can be combined so you get the best of both: the recommender guarantees *which* songs are valid and *why* they match, while the LLM makes the result conversational and easy to read. Crucially, the LLM is constrained to the retrieved set, so it **cannot hallucinate songs that aren't in the catalog** — a concrete, testable answer to a common failure mode of generative AI.
 
 ---
 
-## Data Expansion and Example User Profile
+## Architecture Overview
 
-I expanded the starter catalog in [data/songs.csv](data/songs.csv) with eight new songs that add genres and moods not already present in the original sample, such as hip hop, country, classical, metal, r&b, folk, soul, and electronic.
+![System architecture](assets/mermaid%20diagram.png)
 
-A useful prompt for generating more rows in the same CSV format is:
+The system moves data left-to-right through three stages, with a dedicated zone for human and automated checks:
 
-```text
-Generate 8 additional songs for a music recommender dataset in valid CSV format.
-Use the same headers as the existing file: id,title,artist,genre,mood,energy,tempo_bpm,valence,danceability,acousticness.
-Create songs from genres and moods that are not already represented in the starter data, such as hip hop, country, classical, metal, r&b, folk, soul, or electronic.
-Keep the values realistic and make sure the numerical columns stay within a sensible range.
-```
+- **Input** — a natural-language request and the song catalog (`data/songs.csv`).
+- **Process** —
+  - **RAG layer** ([`src/rag.py`](src/rag.py)): Claude parses the free-text request into a structured `UserProfile`.
+  - **Retriever** ([`src/recommender.py`](src/recommender.py)): the original scoring engine (`ScoringStrategy.score_song`) rates every song, and `recommend_songs` ranks them and applies a diversity penalty to return the top-*k*.
+  - Those top-*k* songs become the **grounding context**, and Claude generates the final conversational answer from that set only.
+  - A **CLI runner** ([`src/main.py`](src/main.py)) exercises the deterministic pipeline directly, without the LLM.
+- **Output** — a ranked recommendation table and/or a grounded conversational answer.
+- **Human & Testing** — `pytest` verifies scoring and ranking correctness, a **grounding guardrail** rejects any song not in the retrieved set, and **human review** (experiments and bias analysis) is documented in `model_card.md`.
 
-A sample user profile for the recommender could look like this:
+A focused view of just the RAG data flow lives in [`assets/rag_architecture.md`](assets/rag_architecture.md) (rendered as `assets/rag_architecture.png`).
 
-```python
-user_profile = {
-    "favorite_genre": "pop",
-    "favorite_mood": "happy",
-    "target_energy": 0.75,
-    "likes_acoustic": False,
-}
-```
-
-This profile is useful because it lets the recommender distinguish between energetic and upbeat songs versus more relaxed songs, while still leaving room for variety across the expanded catalog.
 ---
 
-## Getting Started
+## Setup Instructions
 
+**Prerequisites:** Python 3.10+ (developed on 3.12).
 
+1. **Clone and enter the project**
+   ```bash
+   git clone https://github.com/EthanRamdass/applied-ai-musicrec.git
+   cd applied-ai-musicrec
+   ```
 
-### Setup
-
-1. Create a virtual environment (optional but recommended):
-
+2. **(Optional) Create a virtual environment**
    ```bash
    python -m venv .venv
-   source .venv/bin/activate      # Mac or Linux
+   source .venv/bin/activate      # macOS / Linux
    .venv\Scripts\activate         # Windows
+   ```
 
-2. Install dependencies
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-```bash
-pip install -r requirements.txt
-```
+4. **Run the deterministic recommender** (no API key needed)
+   ```bash
+   python -m src.main
+   ```
 
-3. Run the app:
+5. **Run the RAG (conversational) layer** — requires an Anthropic API key
+   ```bash
+   # macOS / Linux
+   export ANTHROPIC_API_KEY="your-key-here"
+   # Windows PowerShell
+   $env:ANTHROPIC_API_KEY="your-key-here"
 
-```bash
-python -m src.main
-```
+   python -m src.rag "upbeat gym music, nothing acoustic"
+   ```
 
-### Running Tests
-
-Run the starter tests with:
-
-```bash
-pytest
-```
-
-You can add more tests in `tests/test_recommender.py`.
+6. **Run the tests**
+   ```bash
+   pytest
+   ```
 
 ---
 
-## Sample Recommendation Output
+## Sample Interactions
 
-The CLI now prints a ranked list of recommendations for the default profile using the scoring logic implemented in [src/recommender.py](src/recommender.py):
+### Example 1 — Deterministic recommender (High-Energy Pop)
 
+**Input** (user profile): `{ genre: "pop", mood: "happy", energy: 0.8, likes_acoustic: false }`
+
+**Output:**
 ```text
-Loaded songs: 18
-
-Top recommendations:
-
-Sunrise City - Score: 4.48
-Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.98); non-acoustic preference (+0.5)
-
-Gym Hero - Score: 3.37
-Because: genre match (+2.0); energy similarity (+0.87); non-acoustic preference (+0.5)
-
-Rooftop Lights - Score: 2.46
-Because: mood match (+1.0); energy similarity (+0.96); non-acoustic preference (+0.5)
-
-Neon Harbor - Score: 1.49
-Because: energy similarity (+0.99); non-acoustic preference (+0.5)
-
-Circuit Bloom - Score: 1.47
-Because: energy similarity (+0.97); non-acoustic preference (+0.5)
+=== High-Energy Pop [balanced] ===
+Rank | Title         | Score | Reason
+-----+---------------+-------+-------------------------------------------------------------
+1    | Sunrise City  | 4.48  | genre match (+2.0); mood match (+1.0); energy similarity (+0.98); non-acoustic preference (+0.5)
+2    | Gym Hero      | 3.37  | genre match (+2.0); energy similarity (+0.87); non-acoustic preference (+0.5)
+3    | Rooftop Lights| 2.46  | mood match (+1.0); energy similarity (+0.96); non-acoustic preference (+0.5)
 ```
 
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or demo video link here -->
+### Example 2 — Deterministic recommender (Chill Lofi)
 
----
+**Input:** `{ genre: "lofi", mood: "chill", energy: 0.4, likes_acoustic: true }`
 
-## Experiments You Tried
-
-I tested the recommender with several user profiles to see whether the scoring logic behaved sensibly across different tastes.
-
-### Stress test with diverse profiles
-
+**Output:**
 ```text
-=== High-Energy Pop ===
-Sunrise City - Score: 4.48
-Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.98); non-acoustic preference (+0.5)
-
-Gym Hero - Score: 3.37
-Because: genre match (+2.0); energy similarity (+0.87); non-acoustic preference (+0.5)
-
-Rooftop Lights - Score: 2.46
-Because: mood match (+1.0); energy similarity (+0.96); non-acoustic preference (+0.5)
-
-Neon Harbor - Score: 1.49
-Because: energy similarity (+0.99); non-acoustic preference (+0.5)
-
-Circuit Bloom - Score: 1.47
-Because: energy similarity (+0.97); non-acoustic preference (+0.5)
-
-=== Chill Lofi ===
-Midnight Coding - Score: 4.31
-Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.58); acoustic preference (+0.5)
-
-Library Rain - Score: 3.81
-Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.65); acoustic preference (+0.5)
-
-Focus Flow - Score: 2.80
-Because: mood match (+1.0); energy similarity (+0.60); acoustic preference (+0.5)
-
-Coffee Shop Stories - Score: 2.58
-Because: energy similarity (+0.63); acoustic preference (+0.5)
-
-Spacewalk Thoughts - Score: 2.28
-Because: mood match (+1.0); energy similarity (+0.72); acoustic preference (+0.5)
-
-=== Deep Intense Rock ===
-Storm Runner - Score: 4.38
-Because: genre match (+2.0); mood match (+1.0); energy similarity (+0.09); non-acoustic preference (+0.5)
-
-Gym Hero - Score: 3.37
-Because: genre match (+2.0); energy similarity (+0.87); non-acoustic preference (+0.5)
-
-Fire in the Skyline - Score: 3.32
-Because: mood match (+1.0); energy similarity (+0.05); non-acoustic preference (+0.5)
-
-Neon Harbor - Score: 1.49
-Because: energy similarity (+0.99); non-acoustic preference (+0.5)
-
-Circuit Bloom - Score: 1.47
-Because: energy similarity (+0.97); non-acoustic preference (+0.5)
+=== Chill Lofi [balanced] ===
+Rank | Title         | Score | Reason
+-----+---------------+-------+-------------------------------------------------------------
+1    | Midnight Coding| 4.31 | genre match (+2.0); mood match (+1.0); energy similarity (+0.58); acoustic preference (+0.5)
+2    | Library Rain   | 3.81 | genre match (+2.0); mood match (+1.0); energy similarity (+0.65); acoustic preference (+0.5)
+3    | Focus Flow     | 2.80 | mood match (+1.0); energy similarity (+0.60); acoustic preference (+0.5)
 ```
 
-### Small experiment: changing the weights
+### Example 3 — RAG (conversational) layer
 
-I also tried a small sensitivity test by giving energy a stronger role in the scoring rule. The results changed noticeably in the ranking order, especially for profiles that were built around a specific target energy level. This made the recommendations feel more tuned to the user's target vibe, but it also made the output more dependent on a single numeric feature.
+**Input:**
+```bash
+python -m src.rag "I want upbeat gym music, nothing acoustic"
+```
+
+**Output** *(representative — the exact wording varies per model run; the songs are always drawn from the retrieved top-k above):*
+```text
+Request: I want upbeat gym music, nothing acoustic
+
+For a high-energy, non-acoustic gym session, start with "Sunrise City" by
+Neon Echo — it's a bright, upbeat pop track that lands right in your energy
+zone. "Gym Hero" by Max Pulse is an even harder-hitting pop workout song
+(and basically built for this). If you want to keep momentum without maxing
+out, "Rooftop Lights" by Indigo Parade keeps the happy, upbeat feel a notch
+lower. All three are firmly on the non-acoustic side.
+```
+
+> ⚠️ **Honesty note:** Example 3's *wording* is illustrative because the generative output depends on a live API call and varies per run. The *song selections* are deterministic and come from the same scoring engine shown in Examples 1–2, and the grounding guardrail guarantees every named song exists in `data/songs.csv`.
 
 ---
 
-## Limitations and Risks
+## Design Decisions
 
-Summarize some limitations of your recommender.
+- **RAG over fine-tuning or an agent.** With an 18-song catalog and an existing, well-tested scoring engine, RAG was the natural fit: the retriever already *is* the "retrieval" half, so I only needed to add a generation step. Fine-tuning would have required training data the project doesn't have, and a multi-step agent would have added planning machinery a single-pass recommendation doesn't need.
+- **Reuse, don't rewrite.** The RAG layer calls the original `recommend_songs()` unchanged. The generative feature is additive — the deterministic pipeline still runs standalone via `src/main.py` with no API key.
+- **Ground the model, then constrain it.** The LLM only ever sees the retrieved top-*k* songs and is instructed to recommend from that list only. This trades a little conversational freedom for a strong correctness guarantee.
+- **Structured outputs for parsing.** The request-parsing step uses a strict JSON schema so the model's output always matches the `UserProfile` fields the recommender expects — avoiding brittle free-text parsing.
 
-Examples:
+**Trade-offs:** The system depends on an external API (cost, latency, and network) for the conversational layer, so the deterministic CLI remains the offline fallback. The catalog is tiny and the scoring is intentionally simple, so recommendation *quality* is bounded by the data, not the model.
 
-- It only works on a tiny catalog
-- It does not understand lyrics or language
-- It might over favor one genre or mood
+---
 
-You will go deeper on this in your model card.
+## Testing Summary
+
+- **What worked:** The `pytest` suite in `tests/test_recommender.py` confirms the scoring rule and ranking behave correctly across profiles, and sensitivity experiments (e.g., increasing the energy weight) produced sensible, predictable shifts in ranking order. The deterministic pipeline is fully reproducible.
+- **What didn't (or is a known limitation):** The generative layer can't be asserted with exact-match tests because output wording varies per run; it's validated by the grounding constraint and manual review rather than string equality. With a small catalog, the recommender can also over-favor genre/mood and surface stylistically similar songs.
+- **What I learned:** Testing a hybrid system means testing the two halves differently — *exact assertions* for the deterministic retriever, and *invariant/guardrail checks* (every recommended song must exist in the catalog) for the generative half.
 
 ---
 
 ## Reflection
 
-Read and complete `model_card.md`:
+Extending a rule-based system with a generative layer taught me that the highest-leverage design choice was **what to make deterministic vs. generative** — keeping retrieval explainable and testable while letting the model handle only presentation. It reframed "using AI" as a system-design problem about grounding and guardrails, not just prompting.
 
-[**Model Card**](model_card.md)
-
-I learned that a recommender turns raw song features into predictions by converting a user’s preferences into a simple scoring rule and then ranking songs by how well each one matches. In this project, features like genre, mood, energy, and acousticness are treated as signals that can be weighted differently, which makes the system feel transparent but also very dependent on the design of the scoring function. The model is not “understanding” music in a human way; it is making a structured estimate based on the attributes provided in the data.
-
-I also learned that bias can show up in recommenders even when the logic looks simple. If the system overemphasizes genre or mood, it may repeatedly suggest songs from the same style and miss artists or songs from underrepresented groups, especially when the dataset is small or uneven. In real-world systems, this can create unfair or narrow recommendations, so careful dataset design, diversity checks, and human review are important.
-
-
-
+> 📄 My full **responsible-AI reflection** — how I collaborated with AI, one helpful and one flawed AI suggestion, and the system's limitations — is in [`model_card.md`](model_card.md).

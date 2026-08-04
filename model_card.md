@@ -51,3 +51,29 @@ I would add more user signals, such as listening history, skip data, or playlist
 ## 9. Personal Reflection  
 
 My biggest learning moment was realizing that a recommender does not need a complicated model to feel convincing. A few simple rules can already produce recommendations that seem helpful, but they can also be surprisingly narrow or biased. Using AI tools helped me move faster by suggesting structure and code ideas, but I still had to double-check the output because the model sometimes made assumptions that did not match my project goals. I was surprised by how much a single feature like energy could change the ranking, and that made me think about how real recommendation systems balance many signals at once. If I extended this project, I would try adding more diverse songs and a more realistic scoring system based on actual listening behavior.
+
+---
+
+# Responsible-AI Reflection
+
+*(Reliability details and the full test results are in [`EVALUATION.md`](EVALUATION.md).)*
+
+## Limitations and Biases
+
+The system's biggest limitation is its data: an 18-song catalog can't represent the range of real listening tastes, so recommendations are only as diverse as the CSV. The scoring rule weights genre and mood heavily, which creates a **filter-bubble bias** — it repeatedly surfaces stylistically similar songs and can bury good matches that fit the mood in a less obvious way. It has no understanding of lyrics, language, or cultural context, and it can't handle **conflicting profiles** well (a "sad" request at high energy still returns upbeat songs because energy dominates the score). The generative layer inherits the model's training biases in *how* it describes music, even though *which* songs it can name is constrained to the catalog.
+
+## Potential for Misuse and Prevention
+
+The main misuse risk is the generative layer **presenting invented or off-catalog songs as real recommendations**, which could mislead a listener. I prevent this with a deterministic **grounding guardrail** (`verify_grounding` in `src/rag.py`) that checks every generated answer against the retrieved set and logs a warning if a non-retrieved song appears — the model can only recommend from songs that actually exist in the catalog. A broader risk for any recommender is manipulation (nudging users toward specific tracks); I'd mitigate that by keeping the scoring rules transparent and auditable, which this project already does by returning a human-readable reason for every score.
+
+## What Surprised Me While Testing Reliability
+
+The most surprising thing was how **untestable the generative half is by default**. My deterministic recommender could be checked with exact-value assertions, but the LLM's wording changes every run, so a normal "assert equals" test is useless. That pushed me to test a different way — checking an *invariant* (every recommended song must exist in the retrieved set) instead of an exact output. I was also surprised that the guardrail was easy to unit-test *without* the API at all, once the grounding check was written as a pure function.
+
+## Collaboration with AI
+
+I used an AI coding assistant throughout to design the RAG layer, write the diagrams, and structure the tests.
+
+- **One helpful suggestion:** The AI suggested turning "trust the prompt" into a **testable** guardrail — extracting the grounding check into a pure `verify_grounding()` function so it could be unit-tested offline with a stub model client. This changed reliability from something I *hoped* the prompt enforced into something I could actually prove with a passing test.
+
+- **One flawed suggestion:** The AI initially placed `import anthropic` at the top of `src/rag.py`. That broke the very offline tests it had just written — the test module couldn't even import because the `anthropic` SDK wasn't installed (`ModuleNotFoundError`), so the reliability tests failed at collection time. I had it refactor the SDK import to be **lazy** (only imported inside the functions that make a live API call), which let the guardrail and retrieval tests run without the SDK. It was a good reminder that AI-generated code can look correct and still fail in the actual environment — I had to run the tests to catch it.
