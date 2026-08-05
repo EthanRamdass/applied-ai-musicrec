@@ -8,7 +8,7 @@ My original project was the **Music Recommender Simulation**. Its goal was to bu
 
 ## Title and Summary
 
-**What it does:** This project extends the original rule-based recommender with a **Retrieval-Augmented Generation (RAG)** layer. A user can now type a request in plain English ("upbeat gym music, nothing acoustic"), and the system parses it into a structured profile, retrieves the best-matching songs from its catalog using the original scoring engine, and has a large language model (Claude) write a friendly, grounded recommendation — using **only** the songs it actually retrieved.
+**What it does:** This project extends the original rule-based recommender with a **Retrieval-Augmented Generation (RAG)** layer. A user can now type a request in plain English ("upbeat gym music, nothing acoustic"), and the system parses it into a structured profile, retrieves the best-matching songs from its catalog using the original scoring engine, and has a large language model (Google's **Gemini**) write a friendly, grounded recommendation — using **only** the songs it actually retrieved.
 
 **Why it matters:** It shows how a deterministic, explainable retrieval system and a generative model can be combined so you get the best of both: the recommender guarantees *which* songs are valid and *why* they match, while the LLM makes the result conversational and easy to read. Crucially, the LLM is constrained to the retrieved set, so it **cannot hallucinate songs that aren't in the catalog** — a concrete, testable answer to a common failure mode of generative AI.
 
@@ -22,9 +22,9 @@ The system moves data left-to-right through three stages, with a dedicated zone 
 
 - **Input** — a natural-language request and the song catalog (`data/songs.csv`).
 - **Process** —
-  - **RAG layer** ([`src/rag.py`](src/rag.py)): Claude parses the free-text request into a structured `UserProfile`.
+  - **RAG layer** ([`src/rag.py`](src/rag.py)): Gemini parses the free-text request into a structured `UserProfile`.
   - **Retriever** ([`src/recommender.py`](src/recommender.py)): the original scoring engine (`ScoringStrategy.score_song`) rates every song, and `recommend_songs` ranks them and applies a diversity penalty to return the top-*k*.
-  - Those top-*k* songs become the **grounding context**, and Claude generates the final conversational answer from that set only.
+  - Those top-*k* songs become the **grounding context**, and Gemini generates the final conversational answer from that set only.
   - A **CLI runner** ([`src/main.py`](src/main.py)) exercises the deterministic pipeline directly, without the LLM.
 - **Output** — a ranked recommendation table and/or a grounded conversational answer.
 - **Human & Testing** — `pytest` verifies scoring and ranking correctness, a **grounding guardrail** rejects any song not in the retrieved set, and **human review** (experiments and bias analysis) is documented in `model_card.md`.
@@ -60,12 +60,14 @@ A focused view of just the RAG data flow lives in [`assets/rag_architecture.md`]
    python -m src.main
    ```
 
-5. **Run the RAG (conversational) layer** — requires an Anthropic API key
+5. **Run the RAG (conversational) layer** — requires a Google Gemini API key ([get one free at aistudio.google.com](https://aistudio.google.com/app/apikey)). The app auto-loads the key from a git-ignored `.env` file:
    ```bash
-   # macOS / Linux
-   export ANTHROPIC_API_KEY="your-key-here"
-   # Windows PowerShell
-   $env:ANTHROPIC_API_KEY="your-key-here"
+   # Option A: create a .env file in the project root (recommended)
+   echo "GEMINI_API_KEY=your-key-here" > .env
+
+   # Option B: set it in your shell
+   export GEMINI_API_KEY="your-key-here"      # macOS / Linux
+   $env:GEMINI_API_KEY="your-key-here"        # Windows PowerShell
 
    python -m src.rag "upbeat gym music, nothing acoustic"
    ```
@@ -111,22 +113,37 @@ Rank | Title         | Score | Reason
 
 **Input:**
 ```bash
-python -m src.rag "I want upbeat gym music, nothing acoustic"
+python -m src.rag "upbeat gym music, nothing acoustic"
 ```
 
-**Output** *(representative — the exact wording varies per model run; the songs are always drawn from the retrieved top-k above):*
+**Output** *(a real Gemini run — wording varies per run, but the songs are always drawn from the retrieved set):*
 ```text
-Request: I want upbeat gym music, nothing acoustic
+Request: upbeat gym music, nothing acoustic
 
-For a high-energy, non-acoustic gym session, start with "Sunrise City" by
-Neon Echo — it's a bright, upbeat pop track that lands right in your energy
-zone. "Gym Hero" by Max Pulse is an even harder-hitting pop workout song
-(and basically built for this). If you want to keep momentum without maxing
-out, "Rooftop Lights" by Indigo Parade keeps the happy, upbeat feel a notch
-lower. All three are firmly on the non-acoustic side.
+Hey there! I'd love to help you find the perfect high-energy soundtrack for your
+workout. Here are some awesome, non-acoustic tracks from our list that will keep
+your energy high at the gym:
+
+1. "Circuit Bloom" by Nova Keys
+   * Why it fits: An electronic track with a super uplifting mood and great
+     energy (0.77) to keep you moving and motivated.
+2. "Storm Runner" by Voltline
+   * Why it fits: If you like rock, this intense track brings a ton of power
+     with a very high energy level (0.91).
+3. "Gym Hero" by Max Pulse
+   * Why it fits: The name says it all! An intense pop song with an energy
+     rating of 0.93 — perfect for a high-intensity session.
+4. "Fire in the Skyline" by Iron Harbor
+   * Why it fits: A metal track with a rebellious mood and a massive energy
+     level (0.95) for maximum adrenaline.
+5. "Neon Harbor" by Aura Lane
+   * Why it fits: A confident hip hop track with high energy (0.81) to lock
+     into your zone.
+
+None of these are acoustic, so you can count on pure, high-octane energy!
 ```
 
-> ⚠️ **Honesty note:** Example 3's *wording* is illustrative because the generative output depends on a live API call and varies per run. The *song selections* are deterministic and come from the same scoring engine shown in Examples 1–2, and the grounding guardrail guarantees every named song exists in `data/songs.csv`.
+> **Note:** Every song named above exists in `data/songs.csv` — the grounding guardrail (`verify_grounding`) enforces this, so Gemini cannot recommend a track outside the retrieved set. The exact wording varies per run; the song *selections* are deterministic from the scoring engine in Examples 1–2.
 
 ---
 

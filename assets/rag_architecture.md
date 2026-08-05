@@ -7,9 +7,9 @@ the existing scorer/ranker in [`src/recommender.py`](../src/recommender.py).
 
 ## Pipeline
 
-1. **Understand** — Claude parses a free-text request into a structured `UserProfile`.
+1. **Understand** — Gemini parses a free-text request into a structured `UserProfile`.
 2. **Retrieve** — the existing recommender scores + ranks `data/songs.csv` and returns the top-k songs (the grounding data).
-3. **Generate** — Claude writes a conversational recommendation grounded **only** in the retrieved songs, so it can never invent a track outside the catalog.
+3. **Generate** — Gemini writes a conversational recommendation grounded **only** in the retrieved songs, so it can never invent a track outside the catalog.
 
 ## Diagram
 
@@ -18,7 +18,7 @@ flowchart TD
     User["👤 User<br/>natural-language request<br/>e.g. 'upbeat gym music, nothing acoustic'"]
 
     subgraph Parse["1 · Understand the request"]
-        LLM_Parse["Claude (claude-opus-5)<br/>parse free text → structured UserProfile<br/>favorite_genre, favorite_mood,<br/>target_energy, likes_acoustic"]
+        LLM_Parse["Gemini (gemini-3.5-flash)<br/>parse free text → structured UserProfile<br/>favorite_genre, favorite_mood,<br/>target_energy, likes_acoustic"]
     end
 
     subgraph Retrieve["2 · Retrieve (existing recommender)"]
@@ -30,7 +30,7 @@ flowchart TD
 
     subgraph Generate["3 · Generate (grounded)"]
         Context["Build grounding context<br/>ONLY the top-k retrieved songs<br/>+ their scores & reasons"]
-        LLM_Gen["Claude (claude-opus-5)<br/>write conversational recommendation<br/>grounded in retrieved songs only"]
+        LLM_Gen["Gemini (gemini-3.5-flash)<br/>write conversational recommendation<br/>grounded in retrieved songs only"]
         Context --> LLM_Gen
     end
 

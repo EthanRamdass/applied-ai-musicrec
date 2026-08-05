@@ -22,7 +22,7 @@ The RAG tests use a **stub model client**, so they run in CI with no API key and
 
 ## 2. Grounding Guardrail + Logging
 
-`verify_grounding()` in [`src/rag.py`](src/rag.py) is a pure, deterministic check: it scans the generated answer for any catalog title that was **not** in the retrieved set and returns `(is_grounded, leaked_titles)`. The pipeline logs the retrieved songs at `INFO` and logs a `WARNING` if the guardrail detects a leak, so failures are recorded with a reason rather than passing silently. The CLI also handles a missing/invalid `ANTHROPIC_API_KEY` and network errors with clear messages instead of a stack trace.
+`verify_grounding()` in [`src/rag.py`](src/rag.py) is a pure, deterministic check: it scans the generated answer for any catalog title that was **not** in the retrieved set and returns `(is_grounded, leaked_titles)`. The pipeline logs the retrieved songs at `INFO` and logs a `WARNING` if the guardrail detects a leak, so failures are recorded with a reason rather than passing silently. The CLI also handles a missing/invalid `GEMINI_API_KEY` and transient API errors (e.g. `503`/rate limits) with clear messages instead of a stack trace.
 
 ## 3. Human / Manual Evaluation
 
@@ -33,7 +33,8 @@ The RAG tests use a **stub model client**, so they run in CI with no API key and
 | `{genre: pop, mood: sad, energy: 0.9, acoustic: false}` (conflicting) | Handles contradictory preferences without crashing | Partial — runs, but energy dominates and surfaces upbeat songs for a "sad" request |
 | Empty / unmatched profile | Does not crash; returns something or a clear "no strong match" | Pass — returns ranked list; low scores signal weak match |
 | Generated answer names a non-retrieved song | Guardrail flags it | Pass — `verify_grounding` returns `(False, [...])` and logs a warning |
-| Live RAG answer for `"upbeat gym music, nothing acoustic"` | Conversational, only names retrieved songs | Pending reviewer run (requires `ANTHROPIC_API_KEY`) — guardrail enforces the grounding criterion automatically |
+| Live RAG answer for `"upbeat gym music, nothing acoustic"` | Conversational, only names retrieved songs | Pass — real Gemini run named Circuit Bloom, Storm Runner, Gym Hero, Fire in the Skyline, Neon Harbor (all in `data/songs.csv`); guardrail reported no leak |
+| Live RAG under transient API error (`503` / rate limit) | Fails with a clear message, no stack trace | Pass — CLI prints `Error: Gemini API request failed (503 ...)` and exits 1 |
 
 **What worked:** deterministic ranking is reproducible and explainable; the guardrail reliably catches out-of-catalog songs.
 **What didn't:** conflicting profiles let one feature (energy) dominate; the generative layer resists exact-match testing.

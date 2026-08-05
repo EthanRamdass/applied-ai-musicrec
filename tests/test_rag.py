@@ -1,6 +1,6 @@
 """Offline reliability tests for the RAG layer.
 
-These do NOT call the Anthropic API — they use a stub client so the retrieval
+These do NOT call the Gemini API — they use a stub client so the retrieval
 and grounding-guardrail logic can be verified deterministically in CI.
 """
 
@@ -19,22 +19,21 @@ SONGS = [
 ]
 
 
-class _StubBlock:
+class _StubResponse:
     def __init__(self, text):
-        self.type = "text"
         self.text = text
 
 
-class _StubResponse:
-    def __init__(self, text):
-        self.content = [_StubBlock(text)]
+class _StubModels:
+    """Mimics Gemini's client.models.generate_content.
 
+    Returns a canned JSON profile when parsing (JSON mode), a canned answer
+    otherwise.
+    """
 
-class _StubMessages:
-    """Returns a canned profile when parsing, a canned answer when generating."""
-
-    def create(self, **kwargs):
-        if "output_config" in kwargs:  # parse_request step
+    def generate_content(self, **kwargs):
+        config = kwargs.get("config", {})
+        if config.get("response_mime_type") == "application/json":  # parse step
             return _StubResponse(
                 '{"favorite_genre": "pop", "favorite_mood": "happy", '
                 '"target_energy": 0.8, "likes_acoustic": false}'
@@ -44,7 +43,7 @@ class _StubMessages:
 
 class _StubClient:
     def __init__(self):
-        self.messages = _StubMessages()
+        self.models = _StubModels()
 
 
 # --- Grounding guardrail (pure, deterministic) -------------------------------

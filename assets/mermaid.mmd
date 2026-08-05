@@ -14,8 +14,8 @@ flowchart TD
     %% ---------------- PROCESS ----------------
     subgraph Process["PROCESS"]
         subgraph RAG["RAG layer — src/rag.py"]
-            Parse["Claude · parse request → UserProfile"]
-            Generate["Claude · generate grounded answer<br/>(uses only retrieved songs)"]
+            Parse["Gemini · parse request → UserProfile"]
+            Generate["Gemini · generate grounded answer<br/>(uses only retrieved songs)"]
         end
         subgraph Rec["Retriever — src/recommender.py"]
             Score["ScoringStrategy.score_song<br/>weighted content-based match"]

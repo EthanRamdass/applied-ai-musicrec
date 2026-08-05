@@ -4,10 +4,10 @@ Retrieval-Augmented Generation (RAG) layer for the Music Recommender.
 This turns the deterministic content-based recommender into a conversational
 one. The pipeline is:
 
-    1. Understand  - Claude parses a free-text request into a UserProfile.
+    1. Understand  - Gemini parses a free-text request into a UserProfile.
     2. Retrieve    - the existing recommender scores + ranks the catalog and
                      returns the top-k matching songs (the "grounding" data).
-    3. Generate    - Claude writes a natural-language recommendation grounded
+    3. Generate    - Gemini writes a natural-language recommendation grounded
                      ONLY in the retrieved songs, so it can never invent a
                      track that is not in data/songs.csv.
 
@@ -15,8 +15,9 @@ The retrieval half is your existing code (recommender.py); this file only adds
 the language-model front-end and grounded generation on top.
 
 Setup:
-    pip install anthropic          # or: pip install -r requirements.txt
-    export ANTHROPIC_API_KEY=...   # Windows PowerShell: $env:ANTHROPIC_API_KEY="..."
+    pip install google-genai python-dotenv   # or: pip install -r requirements.txt
+    # put your key in .env (git-ignored):  GEMINI_API_KEY=...
+    # or: export GEMINI_API_KEY=...          (Windows: $env:GEMINI_API_KEY="...")
 
 Run:
     python -m src.rag "upbeat gym music, nothing acoustic"
@@ -28,7 +29,7 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
-# Load ANTHROPIC_API_KEY from a local .env file if python-dotenv is installed.
+# Load GEMINI_API_KEY from a local .env file if python-dotenv is installed.
 # The .env file is git-ignored — never commit real keys to source.
 try:
     from dotenv import load_dotenv
@@ -37,9 +38,9 @@ try:
 except ImportError:  # pragma: no cover - dotenv is optional
     pass
 
-# `anthropic` is imported lazily inside the functions that build a live client,
-# so the retrieval and grounding-guardrail logic can be imported and unit-tested
-# without the SDK installed.
+# `google.genai` is imported lazily inside the functions that build a live
+# client, so the retrieval and grounding-guardrail logic can be imported and
+# unit-tested without the SDK installed.
 
 try:
     from src.recommender import load_songs, recommend_songs
@@ -49,12 +50,13 @@ except ImportError:  # pragma: no cover - fallback for direct script execution
 
 logger = logging.getLogger("musicrec.rag")
 
-# Latest and most capable Claude model. Adaptive thinking lets the model decide
-# how much to reason per request; see the Anthropic API docs.
-MODEL = "claude-opus-5"
+# Google Gemini model. Fast and capable; swap for another Gemini model if needed
+# (e.g. "gemini-flash-latest" to always track the current flash model).
+MODEL = "gemini-3.5-flash"
 
-# The structured shape we ask the model to extract from free text. It mirrors
-# the fields the Recommender already understands.
+# Response schema for the taste profile. Passing this to Gemini forces
+# constrained decoding, so the model can only return valid JSON with exactly
+# these fields — this eliminates malformed-JSON parse errors.
 PROFILE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -64,29 +66,39 @@ PROFILE_SCHEMA = {
         "likes_acoustic": {"type": "boolean"},
     },
     "required": ["favorite_genre", "favorite_mood", "target_energy", "likes_acoustic"],
-    "additionalProperties": False,
+    "propertyOrdering": [
+        "favorite_genre",
+        "favorite_mood",
+        "target_energy",
+        "likes_acoustic",
+    ],
 }
 
 
 def parse_request(client, request: str) -> Dict:
     """Step 1 - turn a free-text request into a structured taste profile.
 
-    Uses structured outputs so the response is guaranteed to match the schema
-    the recommender expects.
+    Uses Gemini's JSON output mode + a response schema so the response is
+    guaranteed to be valid JSON matching the fields the recommender expects.
+    target_energy is a float from 0.0 (calm) to 1.0 (high energy).
     """
-    response = client.messages.create(
+    response = client.models.generate_content(
         model=MODEL,
-        max_tokens=1024,
-        thinking={"type": "adaptive"},
-        system=(
-            "You translate a listener's free-text request into a music taste "
-            "profile. Pick the single best value for each field. energy is a "
-            "float from 0.0 (calm) to 1.0 (high energy)."
-        ),
-        messages=[{"role": "user", "content": request}],
-        output_config={"format": {"type": "json_schema", "schema": PROFILE_SCHEMA}},
+        contents=request,
+        config={
+            "system_instruction": (
+                "You translate a listener's free-text request into a music "
+                "taste profile. Pick the single best value for each field. "
+                "target_energy is a float from 0.0 (calm) to 1.0 (high energy)."
+            ),
+            "response_mime_type": "application/json",
+            "response_schema": PROFILE_SCHEMA,
+        },
     )
-    text = next(b.text for b in response.content if b.type == "text")
+    text = (response.text or "").strip()
+    # Defensive: strip any accidental ```json fences before parsing.
+    if text.startswith("```"):
+        text = text.strip("`").removeprefix("json").strip()
     return json.loads(text)
 
 
@@ -114,20 +126,19 @@ def generate_answer(
     cannot hallucinate tracks outside the catalog.
     """
     grounding = _format_grounding(retrieved)
-    response = client.messages.create(
-        model=MODEL,
-        max_tokens=1024,
-        thinking={"type": "adaptive"},
-        system=(
-            "You are a friendly music guide. Recommend songs to the listener "
-            "using ONLY the candidate songs provided below. Never invent a "
-            "song, artist, or detail that is not in the list. Explain briefly, "
-            "in plain language, why each pick fits their request.\n\n"
-            f"Candidate songs (already ranked by relevance):\n{grounding}"
-        ),
-        messages=[{"role": "user", "content": request}],
+    system_instruction = (
+        "You are a friendly music guide. Recommend songs to the listener "
+        "using ONLY the candidate songs provided below. Never invent a song, "
+        "artist, or detail that is not in the list. Explain briefly, in plain "
+        "language, why each pick fits their request.\n\n"
+        f"Candidate songs (already ranked by relevance):\n{grounding}"
     )
-    return next(b.text for b in response.content if b.type == "text")
+    response = client.models.generate_content(
+        model=MODEL,
+        contents=request,
+        config={"system_instruction": system_instruction},
+    )
+    return response.text
 
 
 def verify_grounding(
@@ -167,9 +178,9 @@ def recommend(
     Returns a natural-language recommendation grounded in the catalog.
     """
     if client is None:
-        import anthropic  # lazy import: only needed for a live API call
+        from google import genai  # lazy import: only needed for a live API call
 
-        client = anthropic.Anthropic()
+        client = genai.Client()  # reads GEMINI_API_KEY / GOOGLE_API_KEY from env
     if songs is None:
         songs = load_songs("data/songs.csv")
 
@@ -196,23 +207,20 @@ def main() -> None:
     request = " ".join(sys.argv[1:]) or "upbeat pop for a happy morning, nothing acoustic"
     print(f"Request: {request}\n")
 
-    # Fail fast with a clear message if no credentials are configured, instead
-    # of letting the SDK raise a bare TypeError deep in the call stack.
-    if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
+    # Fail fast with a clear message if no credentials are configured.
+    if not (os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")):
         sys.exit(
-            "Error: no Anthropic credentials found. Set ANTHROPIC_API_KEY and retry, e.g.\n"
-            '  Windows PowerShell:  $env:ANTHROPIC_API_KEY="your-key"\n'
-            '  macOS / Linux:       export ANTHROPIC_API_KEY="your-key"'
+            "Error: no Gemini credentials found. Set GEMINI_API_KEY and retry, e.g.\n"
+            '  Windows PowerShell:  $env:GEMINI_API_KEY="your-key"\n'
+            '  macOS / Linux:       export GEMINI_API_KEY="your-key"'
         )
 
-    import anthropic  # lazy import: only needed for the live API path
+    from google.genai import errors as genai_errors  # lazy import: live path only
 
     try:
         print(recommend(request))
-    except anthropic.AuthenticationError:
-        sys.exit("Error: invalid ANTHROPIC_API_KEY. Check the key and retry.")
-    except anthropic.APIConnectionError:
-        sys.exit("Error: could not reach the Anthropic API. Check your connection.")
+    except genai_errors.APIError as exc:
+        sys.exit(f"Error: Gemini API request failed ({exc}). Check your key and model.")
 
 
 if __name__ == "__main__":
